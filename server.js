@@ -78,33 +78,57 @@ discordClient.on("messageCreate", async (message) => {
 
     }
 
+    if (fetchedMessage.mentions) {
+
+      fetchedMessage.mentions.roles.forEach(role => {
+
+        messageQuote = messageQuote ? messageQuote.replace(`<@&${role.id}>`, `<b><i>@${role.name}</i></b>`) : ``;
+        
+      });
+      
+      fetchedMessage.mentions.users.forEach(user => {
+        
+        messageQuote = messageQuote ? messageQuote.replace(`<@${user.id}>`, `<b><i>@${user.username}</i></b>`) : ``;
+
+      });
+
+
+    }
+
   }
 
   // the program currently check if the message's from a bot to check for duplicates.
   // This isn't the best method but it's good enough.
   // A webhook counts as a bot in the discord api, don't ask me why.
-  if (
-    message.channel.id == discordChannelId &&
-    message.author.bot === false
-  ) {
-    const mentionedUsernames = [];
-    for (const mention of message.mentions.users) {
-      // mentionedUsernames.push("@" + mention[1].username);
-    }
-    var attachmentUrls = [];
-    for (const attachment of message.attachments) {
-      attachmentUrls.push(attachment[1].url);
-    }
+  if (message.channel.id == discordChannelId && message.author.bot === false) {
 
     console.log("[DC] ", message.content);
     var finalMessageContent = message.content
       // Remove XML tags      
-      .replace(/<@.*>/gi, "").trim()
+      //.replace(/<@.*>/gi, "").trim()
       // Remove garbage characters
-      .replace(/[<>].*?[<>]/g, '').trim()
+      //.replace(/[<>].*?[<>]/g, '').trim()
       // Replace twitter links with fxtwitter
       .replace("https://twitter", "https://fxtwitter").trim()
       .replace("https://x.com", "https://fixupx.com").trim();
+
+    // Replace <@> tags with corresponding roles or names
+    if (message.mentions) {
+
+      message.mentions.roles.forEach(role => {
+
+        finalMessageContent = finalMessageContent.replace(`<@&${role.id}>`, `<b><i>@${role.name}</i></b>`);
+        
+      });
+      
+      message.mentions.users.forEach(user => {
+        
+        finalMessageContent = finalMessageContent.replace(`<@${user.id}>`, `<b><i>@${user.username}</i></b>`);
+
+      });
+
+
+    }
 
     if (finalMessageContent.length > 0) {
 
@@ -123,9 +147,7 @@ discordClient.on("messageCreate", async (message) => {
         ``
         + quotedMessage
         + `<b>${message.author.username}:</b> `
-        + `${finalMessageContent} `
-        + `${attachmentUrls.join(" ")}`
-        + `${mentionedUsernames.join(" ")}`,
+        + `${finalMessageContent} `,
 
         { parse_mode: 'HTML' }
       );
@@ -219,6 +241,8 @@ telegramBot.on("message", function (message) {
           messageQuote = updateMsg.reply_to_message.text;
 
         }
+
+        // TODO: replace "discord xxx" with blank (bot name)
 
         const quotedText = new EmbedBuilder()
           .setDescription(`***${senderName}:*** *${messageQuote}*`);
