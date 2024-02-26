@@ -88,7 +88,7 @@ discordClient.on("messageCreate", async (message) => {
       
       fetchedMessage.mentions.users.forEach(user => {
         
-        messageQuote = messageQuote ? messageQuote.replace(`<@${user.id}>`, `<b><i>@${user.username}</i></b>`) : ``;
+        messageQuote = messageQuote ? messageQuote.replace(`<@${user.id}>`, `<b><i>@${user.displayName}</i></b>`) : ``;
 
       });
 
@@ -123,7 +123,7 @@ discordClient.on("messageCreate", async (message) => {
       
       message.mentions.users.forEach(user => {
         
-        finalMessageContent = finalMessageContent.replace(`<@${user.id}>`, `<b><i>@${user.username}</i></b>`);
+        finalMessageContent = finalMessageContent.replace(`<@${user.id}>`, `<b><i>@${user.displayName}</i></b>`);
 
       });
 
@@ -242,7 +242,7 @@ telegramBot.on("message", function (message) {
 
         }
 
-        // TODO: replace "discord xxx" with blank (bot name)
+        // Erase bot name in quoted messages
         if(senderName === telegramBot.botInfo.first_name){
           senderName = ``;
         } else {
