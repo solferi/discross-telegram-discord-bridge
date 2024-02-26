@@ -243,9 +243,14 @@ telegramBot.on("message", function (message) {
         }
 
         // TODO: replace "discord xxx" with blank (bot name)
+        if(senderName === telegramBot.botInfo.first_name){
+          senderName = ``;
+        } else {
+          senderName = `***${senderName}:***`;
+        }
 
         const quotedText = new EmbedBuilder()
-          .setDescription(`***${senderName}:*** *${messageQuote}*`);
+          .setDescription(`${senderName}*${messageQuote}*`);
 
         webhookClient.send({
           username: `${updateMsg.from.first_name}`,
