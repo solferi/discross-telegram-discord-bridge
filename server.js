@@ -250,7 +250,7 @@ telegramBot.on("message", function (message) {
         }
 
         const quotedText = new EmbedBuilder()
-          .setDescription(`${senderName}*${messageQuote}*`);
+          .setDescription(`${senderName} *${messageQuote}*`);
 
         webhookClient.send({
           username: `${updateMsg.from.first_name}`,
