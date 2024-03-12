@@ -1,11 +1,16 @@
+/**
+ * Discross Telegram Discord Bridge Server
+ * by solferi
+ */
 
 // ENVIRONMENT VARIABLES
 require('dotenv').config({ path: `${__dirname}/.env` });
-const telegramToken = process.env['TELEGRAM_BOT_TOKEN'];
-const discordToken = process.env['DISCORD_TOKEN'];
-const telegramChatId = process.env['TELEGRAM_CHAT_ID'];
+const discordBotToken = process.env['DISCORD_BOT_TOKEN'];
 const discordChannelId = process.env['DISCORD_CHANNEL_ID'];
-const webhookURL = process.env['WEBHOOK_URL'];
+const discordWebhookURL = process.env['DISCORD_WEBHOOK_URL'];
+
+const telegramBotToken = process.env['TELEGRAM_BOT_TOKEN'];
+const telegramChatId = process.env['TELEGRAM_CHAT_ID'];
 const telegramChatURL = process.env['TELEGRAM_CHAT_URL'];
 
 // Essential libraries
@@ -13,6 +18,14 @@ const path = require('path');
 const https = require('https'); // or 'https' for https:// URLs
 const fs = require('fs');
 const fsp = require('fs').promises;
+const crypto = require('crypto');
+
+// Temp folder initialize
+tempDir = path.join(__dirname, "/temp");
+if (!fs.existsSync(tempDir)) {
+  fs.mkdirSync(tempDir);
+  console.log(`[INFO] Temp dir created.`);
+}
 
 // DISCORD CLIENT
 const { Client, GatewayIntentBits, WebhookClient, EmbedBuilder } = require('discord.js');
@@ -24,28 +37,68 @@ const discordClient = new Client({
     GatewayIntentBits.GuildWebhooks
   ],
 });
+discordClient.once("ready", () => { console.log(`[INFO] Discord bot ready! Logged in as ${discordClient.user.tag}`); });
+discordClient.login(discordBotToken);
+const discordWebhookClient = new WebhookClient({ "url": discordWebhookURL });
 
-const webhookClient = new WebhookClient({ "url": webhookURL });
+// TELEGRAM CLIENT
+const { Telegraf } = require("telegraf");
+const telegramClient = new Telegraf(telegramBotToken);
+telegramClient.start((ctx) => ctx.reply('Welcome!'));
+renameTGSelf();
 
-discordClient.once("ready", () => { console.log(`Discord bot ready! Logged in as ${discordClient.user.tag}`); });
-discordClient.login(discordToken);
+async function renameTGSelf() {
+  tgBotDisplayName = await telegramClient.telegram.getMyName();
+  tgBotName = 'discord bridge'
+  if (tgBotDisplayName.name != tgBotName) {
+    telegramClient.telegram.setMyName(tgBotName);
+    console.log(`[INFO] Renaming bot to '${tgBotName}'`);
+  }
 
-/****************************************************************
- * Discord to Telegram
+}
+
+console.log("[INFO] Telegram bot ready!");
+
+
+
+/**
  * 
- ***************************************************************/
+ * $$$$$$$\   $$$$$$\              $$\          $$$$$$$$\  $$$$$$\  
+ * $$  __$$\ $$  __$$\             \$$\         \__$$  __|$$  __$$\ 
+ * $$ |  $$ |$$ /  \__|             \$$\           $$ |   $$ /  \__|
+ * $$ |  $$ |$$ |            $$$$$$\ \$$\          $$ |   $$ |$$$$\ 
+ * $$ |  $$ |$$ |            \______|$$  |         $$ |   $$ |\_$$ |
+ * $$ |  $$ |$$ |  $$\              $$  /          $$ |   $$ |  $$ |
+ * $$$$$$$  |\$$$$$$  |            $$  /           $$ |   \$$$$$$  |
+ * \_______/  \______/             \__/            \__|    \______/ 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * Intercept messages created in Discord
+ * 
+ * Types of messages entered in Discord:
+ * 
+ * - Text/emoji only
+ * - Text with file/s
+ * - Single URL (Twitter share, Tenor Gif)
+ * - 
+ *   
+ */
+
 discordClient.on("messageCreate", async (message) => {
 
+  console.log();
 
-  /****************************************************************
-   * Message Reply
-   * 
-   * Format the quote for later
-   ****************************************************************/
   sourceMessage = ``;
   sourceMessageURL = ``;
   senderName = ``;
   messageQuote = ``;
+  telegramMessageID = 0;
 
   // Handle reply-type discord messages
   if (message.reference) {
@@ -54,6 +107,10 @@ discordClient.on("messageCreate", async (message) => {
     messageReferenceID = message.reference.messageId;
     const fetchedMessage = await message.channel.messages.fetch(messageReferenceID);
     sourceMessage = fetchedMessage.content;
+
+    // Parse the telegram message ID
+    sourceMessageSplit = sourceMessage.split('?');
+    telegramMessageID = sourceMessageSplit[sourceMessageSplit.length - 1].replace(")", "");
 
     senderName = fetchedMessage.author.username;
     messageQuote = fetchedMessage.content;
@@ -79,17 +136,11 @@ discordClient.on("messageCreate", async (message) => {
     }
 
     if (fetchedMessage.mentions) {
-
       fetchedMessage.mentions.roles.forEach(role => {
-
         messageQuote = messageQuote ? messageQuote.replace(`<@&${role.id}>`, `<b><i>@${role.name}</i></b>`) : ``;
-        
       });
-      
       fetchedMessage.mentions.users.forEach(user => {
-        
         messageQuote = messageQuote ? messageQuote.replace(`<@${user.id}>`, `<b><i>@${user.displayName}</i></b>`) : ``;
-
       });
 
 
@@ -103,34 +154,23 @@ discordClient.on("messageCreate", async (message) => {
   if (message.channel.id == discordChannelId && message.author.bot === false) {
 
     console.log("[DC] ", message.content);
-    var finalMessageContent = message.content
-      // Remove XML tags      
-      //.replace(/<@.*>/gi, "").trim()
-      // Remove garbage characters
-      //.replace(/[<>].*?[<>]/g, '').trim()
-      // Replace twitter links with fxtwitter
+    var composedMessage = message.content
       .replace("https://twitter", "https://fxtwitter").trim()
       .replace("https://x.com", "https://fixupx.com").trim();
 
-    // Replace <@> tags with corresponding roles or names
+    // Format "<@>"" mentioned roles and users
     if (message.mentions) {
-
       message.mentions.roles.forEach(role => {
-
-        finalMessageContent = finalMessageContent.replace(`<@&${role.id}>`, `<b><i>@${role.name}</i></b>`);
-        
+        composedMessage = composedMessage
+          .replace(`<@&${role.id}>`, `<b><i>@${role.name}</i></b>`);
       });
-      
       message.mentions.users.forEach(user => {
-        
-        finalMessageContent = finalMessageContent.replace(`<@${user.id}>`, `<b><i>@${user.displayName}</i></b>`);
-
+        composedMessage = composedMessage
+          .replace(`<@${user.id}>`, `<b><i>@${user.displayName}</i></b>`);
       });
-
-
     }
 
-    if (finalMessageContent.length > 0) {
+    if (composedMessage.length > 0) {
 
       quotedMessage = ``
       if (message.reference) {
@@ -141,33 +181,90 @@ discordClient.on("messageCreate", async (message) => {
 
       }
 
-      telegramBot.telegram.sendMessage(
+
+      // NEW: Send message and reply if necessary
+      // 564 test, 0 disable
+
+      // Get Telegram message reference id
+      replyToMessageId = 0;
+      if(message.reference) { // TODO: and content .startswith
+        const originMessage = await message.channel.messages.fetch(message.reference.messageId);
+        if (originMessage.content.startsWith('[|](')) {
+          omSplitArray = originMessage.content.split(')');
+          idSplitArray = omSplitArray[0].split('/');
+          replyToMessageId = idSplitArray[idSplitArray.length-1];
+          console.log();
+        }
+      }
+      
+      messageWithUsername = ``
+        + `<b>${message.author.username}</b>`
+        + `<a href='https://msg.id/${message.id}/'>:</a> `
+        + `${composedMessage}`;
+
+      telegramClient.telegram.sendMessage(
         telegramChatId,
-
-        ``
-        + quotedMessage
-        + `<b>${message.author.username}:</b> `
-        + `${finalMessageContent} `,
-
-        { parse_mode: 'HTML' }
+        messageWithUsername,
+        {
+          reply_to_message_id: replyToMessageId,
+          parse_mode: 'HTML'
+        }
       );
+
+      // telegramClient.telegram.sendMessage(
+      //   telegramChatId,
+
+      //   ``
+      //   + quotedMessage
+      //   + `<b>${message.author.username}:</b> `
+      //   + `${composedMessage} ${message.id} <a href='http://example.com?msgid=${message.id}' >.</a>`,
+
+      //   { parse_mode: 'HTML' }
+      // );
+
 
     }
   }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+// $$$$$$$$\  $$$$$$\              $$\          $$$$$$$\   $$$$$$\  
+// \__$$  __|$$  __$$\             \$$\         $$  __$$\ $$  __$$\ 
+//    $$ |   $$ /  \__|             \$$\        $$ |  $$ |$$ /  \__|
+//    $$ |   $$ |$$$$\       $$$$$$\ \$$\       $$ |  $$ |$$ |      
+//    $$ |   $$ |\_$$ |      \______|$$  |      $$ |  $$ |$$ |      
+//    $$ |   $$ |  $$ |             $$  /       $$ |  $$ |$$ |  $$\ 
+//    $$ |   \$$$$$$  |            $$  /        $$$$$$$  |\$$$$$$  |
+//    \__|    \______/             \__/         \_______/  \______/ 
+
+
+
+
+
+
+
+
+
+
+
 
 /********************************
  * TELEGRAM TO DISCORD
  ********************************/
 
 // var photoUrl = "";
-const { Telegraf } = require("telegraf");
-// const { sourceMapsEnabled } = require('process');
-const telegramBot = new Telegraf(telegramToken);
-telegramBot.start((ctx) => ctx.reply('Welcome!'));
-console.log("Telegram bot ready!");
 
-telegramBot.on("message", function (message) {
+telegramClient.on("message", function (message) {
 
   const updateMsg = message.update.message;
 
@@ -176,12 +273,12 @@ telegramBot.on("message", function (message) {
 
     // Get sender's pfp
     const getProfilePic = new Promise(function (resolve, reject) {
-      var profilePhotos = telegramBot.telegram.getUserProfilePhotos(updateMsg.from.id);
+      var profilePhotos = telegramClient.telegram.getUserProfilePhotos(updateMsg.from.id);
       profilePhotos.then(function (data) {
 
         // If user has a profile photo, store it for discord pfp
         if (data.total_count > 0) {
-          var file = telegramBot.telegram.getFileLink(data.photos[0][0].file_id);
+          var file = telegramClient.telegram.getFileLink(data.photos[0][0].file_id);
           file.then(function (result) {
             resolve(result);
           });
@@ -210,6 +307,8 @@ telegramBot.on("message", function (message) {
 
         senderName = updateMsg.reply_to_message.from.first_name;
         messageQuote = updateMsg.reply_to_message.text;
+        messageRefId = updateMsg.reply_to_message.link_preview_options.url.split('=')[1];
+        console.log(messageRefId);
 
         // Handle Telegram replies on non-text i.e. Tenor GIFs
         if (!messageQuote) {
@@ -243,7 +342,7 @@ telegramBot.on("message", function (message) {
         }
 
         // Erase bot name in quoted messages
-        if(senderName === telegramBot.botInfo.first_name){
+        if (senderName === telegramClient.botInfo.first_name) {
           senderName = ``;
         } else {
           senderName = `***${senderName}:***`;
@@ -252,7 +351,7 @@ telegramBot.on("message", function (message) {
         const quotedText = new EmbedBuilder()
           .setDescription(`${senderName} *${messageQuote}*`);
 
-        webhookClient.send({
+        discordWebhookClient.send({
           username: `${updateMsg.from.first_name}`,
           avatarURL: profileUrl.toString(),
           embeds: [quotedText]
@@ -290,7 +389,7 @@ telegramBot.on("message", function (message) {
           )
           .setThumbnail('https://telegram.org/img/t_logo.png');
 
-        webhookClient.send({ content: announcementString, embeds: [embed] });
+        discordWebhookClient.send({ content: announcementString, embeds: [embed] });
 
       } else if (updateMsg.document || updateMsg.sticker || updateMsg.photo) {
 
@@ -303,7 +402,7 @@ telegramBot.on("message", function (message) {
            * need to send the url, so hide it with markdown "[]()" tags
           ***********************************************************************/
 
-          telegramBot.telegram
+          telegramClient.telegram
             .getFileLink(updateMsg.document.file_id)
             .then(function (documentURL) {
 
@@ -321,7 +420,7 @@ telegramBot.on("message", function (message) {
                   file.close();
                   console.log(`    [FILE] Download Completed: ${localFileName}`);
 
-                  webhookClient.send({
+                  discordWebhookClient.send({
                     content: `${updateMsg.caption ? updateMsg.caption : ""}`,
                     username: `${updateMsg.from.first_name}`,
                     avatarURL: profileUrl.toString(),
@@ -349,7 +448,7 @@ telegramBot.on("message", function (message) {
            * result: clean image displays. no url display
            ********************************************************************/
 
-          telegramBot.telegram
+          telegramClient.telegram
             .getFileLink(updateMsg.sticker.file_id)
             .then(function (photoUrl) {
 
@@ -369,7 +468,7 @@ telegramBot.on("message", function (message) {
                     file.close();
                     console.log(`     [FILE] Download Completed: ${localFileName}`);
 
-                    webhookClient.send({
+                    discordWebhookClient.send({
                       // content: `${updateMsg.caption ? updateMsg.caption : ""}`,
                       username: `${updateMsg.from.first_name}`,
                       avatarURL: profileUrl.toString(),
@@ -399,7 +498,7 @@ telegramBot.on("message", function (message) {
            *         then delete the local file
            * result: clean image displays. no url display
            ********************************************************************/
-          telegramBot.telegram
+          telegramClient.telegram
             .getFileLink(updateMsg.photo[updateMsg.photo.length - 1].file_id)
             .then(function (photoUrl) {
 
@@ -417,7 +516,7 @@ telegramBot.on("message", function (message) {
                   file.close();
                   console.log(`     [FILE] Download Completed: ${localFileName}`);
 
-                  webhookClient.send({
+                  discordWebhookClient.send({
                     content: `${updateMsg.caption ? updateMsg.caption : ""}`,
                     username: `${updateMsg.from.first_name}`,
                     avatarURL: profileUrl.toString(),
@@ -453,8 +552,8 @@ telegramBot.on("message", function (message) {
 
 
           console.log(`[TG] ${updateMsg.from.first_name}: ${msgText}`);
-          webhookClient.send({
-            content: msgText,
+          discordWebhookClient.send({
+            content: `[|](https://msg.id/${updateMsg.message_id}) ${msgText}`, // \u200b
             username: `${updateMsg.from.first_name}`,
             avatarURL: profileUrl.toString(),
           });
@@ -465,12 +564,18 @@ telegramBot.on("message", function (message) {
   }
 });
 
-telegramBot.launch();
+
+
+
+
+
+
+telegramClient.launch();
 
 async function deleteFile(filePath) {
   try {
     await fsp.unlink(filePath);
-    console.log(`     [FILE] ${filePath} has been deleted.`);
+    console.log(`    [FILE] ${filePath} has been deleted.`);
   } catch (err) {
     //console.error(err);
   }
