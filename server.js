@@ -1,11 +1,8 @@
-/**
- * Discross Telegram Discord Bridge Server
- * by solferi
- */
 
 // ENVIRONMENT VARIABLES
 require('dotenv').config({ path: `${__dirname}/.env` });
 const discordBotToken = process.env['DISCORD_BOT_TOKEN'];
+const discordGuildId = process.env['DISCORD_GUILD_ID'];
 const discordChannelId = process.env['DISCORD_CHANNEL_ID'];
 const discordWebhookURL = process.env['DISCORD_WEBHOOK_URL'];
 
@@ -18,14 +15,6 @@ const path = require('path');
 const https = require('https'); // or 'https' for https:// URLs
 const fs = require('fs');
 const fsp = require('fs').promises;
-const crypto = require('crypto');
-
-// Temp folder initialize
-tempDir = path.join(__dirname, "/temp");
-if (!fs.existsSync(tempDir)) {
-  fs.mkdirSync(tempDir);
-  console.log(`[INFO] Temp dir created.`);
-}
 
 // DISCORD CLIENT
 const { Client, GatewayIntentBits, WebhookClient, EmbedBuilder } = require('discord.js');
@@ -37,27 +26,19 @@ const discordClient = new Client({
     GatewayIntentBits.GuildWebhooks
   ],
 });
-discordClient.once("ready", () => { console.log(`[INFO] Discord bot ready! Logged in as ${discordClient.user.tag}`); });
-discordClient.login(discordBotToken);
+
 const discordWebhookClient = new WebhookClient({ "url": discordWebhookURL });
 
-// TELEGRAM CLIENT
-const { Telegraf } = require("telegraf");
-const telegramClient = new Telegraf(telegramBotToken);
-telegramClient.start((ctx) => ctx.reply('Welcome!'));
-renameTGSelf();
+discordClient.once("ready", () => { console.log(`Discord bot ready! Logged in as ${discordClient.user.tag}`); });
+discordClient.login(discordBotToken);
 
-async function renameTGSelf() {
-  tgBotDisplayName = await telegramClient.telegram.getMyName();
-  tgBotName = 'discord bridge'
-  if (tgBotDisplayName.name != tgBotName) {
-    telegramClient.telegram.setMyName(tgBotName);
-    console.log(`[INFO] Renaming bot to '${tgBotName}'`);
-  }
 
-}
 
-console.log("[INFO] Telegram bot ready!");
+
+
+
+
+
 
 
 
@@ -89,142 +70,90 @@ console.log("[INFO] Telegram bot ready!");
  * - 
  *   
  */
-
 discordClient.on("messageCreate", async (message) => {
 
-  console.log();
+  try {
+    
 
-  sourceMessage = ``;
-  sourceMessageURL = ``;
-  senderName = ``;
-  messageQuote = ``;
-  telegramMessageID = 0;
-
-  // Handle reply-type discord messages
-  if (message.reference) {
-
-    // Get the source discord message
-    messageReferenceID = message.reference.messageId;
-    const fetchedMessage = await message.channel.messages.fetch(messageReferenceID);
-    sourceMessage = fetchedMessage.content;
-
-    // Parse the telegram message ID
-    sourceMessageSplit = sourceMessage.split('?');
-    telegramMessageID = sourceMessageSplit[sourceMessageSplit.length - 1].replace(")", "");
-
-    senderName = fetchedMessage.author.username;
-    messageQuote = fetchedMessage.content;
-
-    // Handle Discord replies on non-text i.e. gifs
-    if (!messageQuote) {
-
-      // Make reply reference empty not null
-      messageQuote = `(non-text)`;
-
-      // Handle replies on long text
-    } else if (messageQuote.length > 80) {
-
-      // Truncate long text to make 80 characters (including ellipses)
-      messageQuote = `${fetchedMessage.content.substring(0, 77)}...`;
-
-      // Handle replies on normal text
-    } else {
-
-      // Quote the full text
-      messageQuote = fetchedMessage.content;
-
-    }
-
-    if (fetchedMessage.mentions) {
-      fetchedMessage.mentions.roles.forEach(role => {
-        messageQuote = messageQuote ? messageQuote.replace(`<@&${role.id}>`, `<b><i>@${role.name}</i></b>`) : ``;
-      });
-      fetchedMessage.mentions.users.forEach(user => {
-        messageQuote = messageQuote ? messageQuote.replace(`<@${user.id}>`, `<b><i>@${user.displayName}</i></b>`) : ``;
-      });
-
-
-    }
-
-  }
-
-  // the program currently check if the message's from a bot to check for duplicates.
-  // This isn't the best method but it's good enough.
-  // A webhook counts as a bot in the discord api, don't ask me why.
+  // Process messages that are not bot/webhook generated i.e. human messages
   if (message.channel.id == discordChannelId && message.author.bot === false) {
 
     console.log("[DC] ", message.content);
-    var composedMessage = message.content
+
+    // Replace twitter links with fxtwitter
+    var discordMessageText = message.content
       .replace("https://twitter", "https://fxtwitter").trim()
       .replace("https://x.com", "https://fixupx.com").trim();
 
-    // Format "<@>"" mentioned roles and users
+    // Replace <@> tags with corresponding roles or names
     if (message.mentions) {
       message.mentions.roles.forEach(role => {
-        composedMessage = composedMessage
+        discordMessageText = discordMessageText
           .replace(`<@&${role.id}>`, `<b><i>@${role.name}</i></b>`);
       });
       message.mentions.users.forEach(user => {
-        composedMessage = composedMessage
+        discordMessageText = discordMessageText
           .replace(`<@${user.id}>`, `<b><i>@${user.displayName}</i></b>`);
       });
     }
 
-    if (composedMessage.length > 0) {
+    if (discordMessageText.length > 0) {
 
-      quotedMessage = ``
+      var originMessageText = ``
+      /****************************************************************
+         * Message Reply
+         * 
+         * Format the quote for later
+         ****************************************************************/
+      originMessageText = '';
+      var originMessageId = 0;
+
       if (message.reference) {
 
-        quotedMessage = ``
-          + `<blockquote><b>${senderName}</b>\n`
-          + `${messageQuote}</blockquote>\n`;
 
-      }
-
-
-      // NEW: Send message and reply if necessary
-      // 564 test, 0 disable
-
-      // Get Telegram message reference id
-      replyToMessageId = 0;
-      if(message.reference) { // TODO: and content .startswith
+        // Get the text content of the discord origin
         const originMessage = await message.channel.messages.fetch(message.reference.messageId);
-        if (originMessage.content.startsWith('[|](')) {
-          omSplitArray = originMessage.content.split(')');
-          idSplitArray = omSplitArray[0].split('/');
-          replyToMessageId = idSplitArray[idSplitArray.length-1];
-          console.log();
+        originMessageText = originMessage.content;
+
+        // Get msg id if exists
+        if (originMessageText.includes('](https://msg.id')) {
+          originMessageId = getMsgIdFromLink(originMessageText);
+          originMessageText = originMessageText.split(')')[1].trim()
+        }
+
+        
+        if (originMessageId == 0) {
+          originMessageText = ``
+          + `<blockquote><b>${originMessage.author.username}</b>\n`
+          + `${originMessageText}</blockquote>\n`;
+        } else {
+          originMessageText = ``;
         }
       }
-      
-      messageWithUsername = ``
-        + `<b>${message.author.username}</b>`
-        + `<a href='https://msg.id/${message.id}/'>:</a> `
-        + `${composedMessage}`;
 
-      telegramClient.telegram.sendMessage(
+      // Send the discord reply to Telegram
+      telegramBot.telegram.sendMessage(
         telegramChatId,
-        messageWithUsername,
+
+        ``
+        + originMessageText
+        + `<b>${message.author.username}<a href='https://msg.id/${message.id}/'>:</a></b> `
+        + `${discordMessageText} `,
+
         {
-          reply_to_message_id: replyToMessageId,
-          parse_mode: 'HTML'
+          parse_mode: 'HTML',
+          reply_to_message_id: originMessageId,
         }
       );
 
-      // telegramClient.telegram.sendMessage(
-      //   telegramChatId,
-
-      //   ``
-      //   + quotedMessage
-      //   + `<b>${message.author.username}:</b> `
-      //   + `${composedMessage} ${message.id} <a href='http://example.com?msgid=${message.id}' >.</a>`,
-
-      //   { parse_mode: 'HTML' }
-      // );
-
-
+    } else {
+      console.log('Discord message text empty. Is this an upload?');
     }
   }
+
+} catch (error) {
+    console.log("[ERROR]", error.message);
+}
 });
 
 
@@ -236,35 +165,29 @@ discordClient.on("messageCreate", async (message) => {
 
 
 
-
-
-// $$$$$$$$\  $$$$$$\              $$\          $$$$$$$\   $$$$$$\  
-// \__$$  __|$$  __$$\             \$$\         $$  __$$\ $$  __$$\ 
-//    $$ |   $$ /  \__|             \$$\        $$ |  $$ |$$ /  \__|
-//    $$ |   $$ |$$$$\       $$$$$$\ \$$\       $$ |  $$ |$$ |      
-//    $$ |   $$ |\_$$ |      \______|$$  |      $$ |  $$ |$$ |      
-//    $$ |   $$ |  $$ |             $$  /       $$ |  $$ |$$ |  $$\ 
-//    $$ |   \$$$$$$  |            $$  /        $$$$$$$  |\$$$$$$  |
-//    \__|    \______/             \__/         \_______/  \______/ 
-
-
-
-
-
-
-
-
-
-
-
-
-/********************************
+/**
+ * $$$$$$$$\  $$$$$$\              $$\          $$$$$$$\   $$$$$$\  
+ * \__$$  __|$$  __$$\             \$$\         $$  __$$\ $$  __$$\ 
+ *    $$ |   $$ /  \__|             \$$\        $$ |  $$ |$$ /  \__|
+ *    $$ |   $$ |$$$$\       $$$$$$\ \$$\       $$ |  $$ |$$ |      
+ *    $$ |   $$ |\_$$ |      \______|$$  |      $$ |  $$ |$$ |      
+ *    $$ |   $$ |  $$ |             $$  /       $$ |  $$ |$$ |  $$\ 
+ *    $$ |   \$$$$$$  |            $$  /        $$$$$$$  |\$$$$$$  |
+ *    \__|    \______/             \__/         \_______/  \______/ 
+ *
+ * 
+ * 
+ * 
  * TELEGRAM TO DISCORD
- ********************************/
+ */
 
 // var photoUrl = "";
+const { Telegraf } = require("telegraf");
+const telegramBot = new Telegraf(telegramBotToken);
+telegramBot.start((ctx) => ctx.reply('Welcome!'));
+console.log("Telegram bot ready!");
 
-telegramClient.on("message", function (message) {
+telegramBot.on("message", function (message) {
 
   const updateMsg = message.update.message;
 
@@ -273,12 +196,12 @@ telegramClient.on("message", function (message) {
 
     // Get sender's pfp
     const getProfilePic = new Promise(function (resolve, reject) {
-      var profilePhotos = telegramClient.telegram.getUserProfilePhotos(updateMsg.from.id);
+      var profilePhotos = telegramBot.telegram.getUserProfilePhotos(updateMsg.from.id);
       profilePhotos.then(function (data) {
 
         // If user has a profile photo, store it for discord pfp
         if (data.total_count > 0) {
-          var file = telegramClient.telegram.getFileLink(data.photos[0][0].file_id);
+          var file = telegramBot.telegram.getFileLink(data.photos[0][0].file_id);
           file.then(function (result) {
             resolve(result);
           });
@@ -294,7 +217,8 @@ telegramClient.on("message", function (message) {
     // Handle various message types
     getProfilePic.then(function (profileUrl) {
 
-      var messageQuote = ``;
+      var originMessageText = ``;
+      var msgID = '';
 
       /***********************************************************************
        * Message Reply
@@ -306,50 +230,53 @@ telegramClient.on("message", function (message) {
       if (updateMsg.reply_to_message) {
 
         senderName = updateMsg.reply_to_message.from.first_name;
-        messageQuote = updateMsg.reply_to_message.text;
-        messageRefId = updateMsg.reply_to_message.link_preview_options.url.split('=')[1];
-        console.log(messageRefId);
+        originMessageText = updateMsg.reply_to_message.text;
+
+        // Try to get discord msg ID if existing
+        if (updateMsg.reply_to_message.link_preview_options) {
+          msgID = getMsgIdFromLink(updateMsg.reply_to_message.link_preview_options.url);
+        }
 
         // Handle Telegram replies on non-text i.e. Tenor GIFs
-        if (!messageQuote) {
+        if (!originMessageText) {
 
           // Make reply reference empty not null
           if (updateMsg.reply_to_message.caption) {
 
-            messageQuote = `[with media] ${updateMsg.reply_to_message.caption}`;
+            originMessageText = `[with media] ${updateMsg.reply_to_message.caption}`;
 
           } else {
 
-            messageQuote = `[media]`;
+            originMessageText = `[media]`;
 
           }
-          // console.log(updateMsg.reply_to_message.photo);
-          // console.log(updateMsg.reply_to_message.photoUrl);
-          // TODO: Get thumbnail of reference if it was a Tenor gif/photo
 
           // Handle replies on long text
-        } else if (messageQuote.length > 80) {
+        } else if (originMessageText.length > 80) {
 
           // Truncate long text to make 80 characters (including ellipses)
-          messageQuote = `${updateMsg.reply_to_message.text.substring(0, 77)}...`;
+          originMessageText = `${updateMsg.reply_to_message.text.substring(0, 77)}...`;
 
           // Handle replies on normal text
         } else {
 
           // Quote the full text
-          messageQuote = updateMsg.reply_to_message.text;
+          originMessageText = `${updateMsg.reply_to_message.text}`;
 
         }
 
         // Erase bot name in quoted messages
-        if (senderName === telegramClient.botInfo.first_name) {
+        if (senderName === telegramBot.botInfo.first_name) {
           senderName = ``;
         } else {
-          senderName = `***${senderName}:***`;
+          senderName = `${senderName}: `;
         }
 
         const quotedText = new EmbedBuilder()
-          .setDescription(`${senderName} *${messageQuote}*`);
+          .setAuthor({
+            name: `${senderName}${originMessageText}`,
+            url: `https://discord.com/channels/${discordGuildId}/${discordChannelId}/${msgID}`
+          });
 
         discordWebhookClient.send({
           username: `${updateMsg.from.first_name}`,
@@ -402,7 +329,7 @@ telegramClient.on("message", function (message) {
            * need to send the url, so hide it with markdown "[]()" tags
           ***********************************************************************/
 
-          telegramClient.telegram
+          telegramBot.telegram
             .getFileLink(updateMsg.document.file_id)
             .then(function (documentURL) {
 
@@ -448,7 +375,7 @@ telegramClient.on("message", function (message) {
            * result: clean image displays. no url display
            ********************************************************************/
 
-          telegramClient.telegram
+          telegramBot.telegram
             .getFileLink(updateMsg.sticker.file_id)
             .then(function (photoUrl) {
 
@@ -498,7 +425,7 @@ telegramClient.on("message", function (message) {
            *         then delete the local file
            * result: clean image displays. no url display
            ********************************************************************/
-          telegramClient.telegram
+          telegramBot.telegram
             .getFileLink(updateMsg.photo[updateMsg.photo.length - 1].file_id)
             .then(function (photoUrl) {
 
@@ -551,9 +478,21 @@ telegramClient.on("message", function (message) {
             .replace("https://x.com", "https://fixupx.com").trim();
 
 
+          // If this is a message reply, populate message reference parameter
+          var msgReference;
+          if (updateMsg.reply_to_message) {
+            msgReference = {
+              message_id: msgID,
+              channel_id: discordChannelId,
+              guild_id: discordGuildId
+            }
+          }
+
+          tgMsgIdTag = `[:black_small_square:](https://msg.id/${updateMsg.message_id}/) `;
           console.log(`[TG] ${updateMsg.from.first_name}: ${msgText}`);
+
           discordWebhookClient.send({
-            content: `[|](https://msg.id/${updateMsg.message_id}) ${msgText}`, // \u200b
+            content: tgMsgIdTag + msgText,
             username: `${updateMsg.from.first_name}`,
             avatarURL: profileUrl.toString(),
           });
@@ -564,18 +503,22 @@ telegramClient.on("message", function (message) {
   }
 });
 
+function getMsgIdFromLink(msgIdURL) {
+  console.log();
+  
+  if (msgIdURL) {
+    return msgIdURL.split('/')[3];
+  } else {
+    return 0;
+  }
+}
 
-
-
-
-
-
-telegramClient.launch();
+telegramBot.launch();
 
 async function deleteFile(filePath) {
   try {
     await fsp.unlink(filePath);
-    console.log(`    [FILE] ${filePath} has been deleted.`);
+    console.log(`     [FILE] ${filePath} has been deleted.`);
   } catch (err) {
     //console.error(err);
   }
